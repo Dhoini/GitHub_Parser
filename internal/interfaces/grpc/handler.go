@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Handler implements the gRPC server for GitHub Parser service
 type Handler struct {
 	pb.UnimplementedGithubParserServiceServer
 	parserService service.ParserService
@@ -22,7 +23,7 @@ type Handler struct {
 	logger        *logger.Logger
 }
 
-
+// NewHandler creates a new gRPC handler
 func NewHandler(
 	parserService service.ParserService,
 	repoRepo repository.RepositoryRepository,
@@ -32,16 +33,17 @@ func NewHandler(
 	logger *logger.Logger,
 ) *Handler {
 	return &Handler{
-		parserService: parserService,
-		repoRepo:      repoRepo,
-		issueRepo:     issueRepo,
-		prRepo:        prRepo,
-		userRepo:      userRepo,
-		logger:        logger,
+		UnimplementedGithubParserServiceServer: pb.UnimplementedGithubParserServiceServer{},
+		parserService:                          parserService,
+		repoRepo:                               repoRepo,
+		issueRepo:                              issueRepo,
+		prRepo:                                 prRepo,
+		userRepo:                               userRepo,
+		logger:                                 logger,
 	}
 }
 
-// ParseRepository парсит репозиторий GitHub
+// ParseRepository parses a GitHub repository
 func (h *Handler) ParseRepository(ctx context.Context, req *pb.ParseRepositoryRequest) (*pb.ParseRepositoryResponse, error) {
 	if req.Owner == "" || req.Name == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "owner and name are required")
@@ -123,7 +125,7 @@ func (h *Handler) ListRepositories(ctx context.Context, req *pb.ListRepositories
 	}, nil
 }
 
-// ParseIssues парсит issues репозитория
+// ParseIssues parses issues of a repository
 func (h *Handler) ParseIssues(ctx context.Context, req *pb.ParseIssuesRequest) (*pb.ParseIssuesResponse, error) {
 	if req.Owner == "" || req.Repo == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "owner and repo are required")
@@ -210,7 +212,7 @@ func (h *Handler) ListIssues(ctx context.Context, req *pb.ListIssuesRequest) (*p
 	}, nil
 }
 
-// ParsePullRequests парсит pull requests репозитория
+// ParsePullRequests parses pull requests of a repository
 func (h *Handler) ParsePullRequests(ctx context.Context, req *pb.ParsePullRequestsRequest) (*pb.ParsePullRequestsResponse, error) {
 	if req.Owner == "" || req.Repo == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "owner and repo are required")
@@ -305,7 +307,7 @@ func (h *Handler) ListPullRequests(ctx context.Context, req *pb.ListPullRequests
 	}, nil
 }
 
-// ParseUser парсит пользователя GitHub
+// ParseUser parses a GitHub user
 func (h *Handler) ParseUser(ctx context.Context, req *pb.ParseUserRequest) (*pb.ParseUserResponse, error) {
 	if req.Username == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "username is required")
@@ -377,7 +379,7 @@ func (h *Handler) ListUsers(ctx context.Context, req *pb.ListUsersRequest) (*pb.
 	}, nil
 }
 
-// StartParsingJob запускает асинхронную задачу парсинга
+// StartParsingJob starts an asynchronous parsing job
 func (h *Handler) StartParsingJob(ctx context.Context, req *pb.StartParsingJobRequest) (*pb.StartParsingJobResponse, error) {
 	if req.OwnerName == "" || req.RepoName == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "owner_name and repo_name are required")
@@ -402,7 +404,7 @@ func (h *Handler) StartParsingJob(ctx context.Context, req *pb.StartParsingJobRe
 	}, nil
 }
 
-// GetParsingJobStatus возвращает статус асинхронной задачи парсинга
+// GetParsingJobStatus returns the status of an asynchronous parsing job
 func (h *Handler) GetParsingJobStatus(ctx context.Context, req *pb.GetParsingJobStatusRequest) (*pb.GetParsingJobStatusResponse, error) {
 	if req.JobId == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
@@ -422,3 +424,4 @@ func (h *Handler) GetParsingJobStatus(ctx context.Context, req *pb.GetParsingJob
 		CreatedAt:    jobStatus.CreatedAt,
 		UpdatedAt:    jobStatus.UpdatedAt,
 	}, nil
+}
