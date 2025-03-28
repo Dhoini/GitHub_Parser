@@ -1,25 +1,88 @@
-version: '3'
-
 services:
   app:
     build: .
+    container_name: github-parser
     ports:
-      - "50051:50051"
+      - "50051:50051"  # gRPC
+      - "9090:9090"    # Prometheus metrics
     environment:
       - SERVER_PORT=50051
+      - METRICS_PORT=9090
       - MONGODB_URI=mongodb://mongo:27017
       - MONGODB_DATABASE=github_parser
       - GITHUB_TOKEN=${GITHUB_TOKEN}
     depends_on:
-      - mongo
-    restart: on-failure
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50051"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - github-parser-network
+    # Set resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   mongo:
     image: mongo:6.0
+    container_name: github-parser-mongo
     ports:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=github_parser
+    networks:
+      - github-parser-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/github_parser --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: github-parser-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - github-parser-network
+    depends_on:
+      app:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: github-parser-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - github-parser-network
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+networks:
+  github-parser-network:
+    driver: bridge
 
 volumes:
   mongo-data:
+  grafana-storage:

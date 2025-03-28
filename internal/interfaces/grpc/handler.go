@@ -15,12 +15,28 @@ import (
 type Handler struct {
 	pb.UnimplementedGithubParserServiceServer
 	parserService service.ParserService
+	repoRepo      repository.RepositoryRepository
+	issueRepo     repository.IssueRepository
+	prRepo        repository.PullRequestRepository
+	userRepo      repository.UserRepository
 	logger        *logger.Logger
 }
 
-func NewHandler(parserService service.ParserService, logger *logger.Logger) *Handler {
+
+func NewHandler(
+	parserService service.ParserService,
+	repoRepo repository.RepositoryRepository,
+	issueRepo repository.IssueRepository,
+	prRepo repository.PullRequestRepository,
+	userRepo repository.UserRepository,
+	logger *logger.Logger,
+) *Handler {
 	return &Handler{
 		parserService: parserService,
+		repoRepo:      repoRepo,
+		issueRepo:     issueRepo,
+		prRepo:        prRepo,
+		userRepo:      userRepo,
 		logger:        logger,
 	}
 }
@@ -55,8 +71,9 @@ func (h *Handler) ParseRepository(ctx context.Context, req *pb.ParseRepositoryRe
 	}, nil
 }
 
-// ListRepositories возвращает список репозиториев
+// ListRepositories returns a list of repositories
 func (h *Handler) ListRepositories(ctx context.Context, req *pb.ListRepositoriesRequest) (*pb.ListRepositoriesResponse, error) {
+	// Create a repository filter based on the request
 	filter := repository.RepositoryFilter{
 		OwnerLogin: req.OwnerLogin,
 		Language:   req.Language,
@@ -65,10 +82,45 @@ func (h *Handler) ListRepositories(ctx context.Context, req *pb.ListRepositories
 		Offset:     int(req.Offset),
 	}
 
-	// Здесь требуется реализация метода List репозитория
-	// Для примера заглушка
-	h.logger.Error("ListRepositories method not implemented")
-	return nil, status.Errorf(codes.Unimplemented, "method not implemented")
+	// Apply defaults if not specified
+	if filter.Limit <= 0 {
+		filter.Limit = 10 // Default limit
+	}
+
+	// Get repositories from MongoDB
+	repos, err := h.repoRepo.List(ctx, filter)
+	if err != nil {
+		h.logger.Error("Failed to list repositories: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to list repositories: %v", err)
+	}
+
+	// Convert to protobuf format
+	var pbRepos []*pb.Repository
+	for _, repo := range repos {
+		pbRepo := &pb.Repository{
+			Id:              repo.ID,
+			Name:            repo.Name,
+			FullName:        repo.FullName,
+			Description:     repo.Description,
+			IsPrivate:       repo.IsPrivate,
+			OwnerLogin:      repo.OwnerLogin,
+			Language:        repo.Language,
+			StarsCount:      int32(repo.StarsCount),
+			ForksCount:      int32(repo.ForksCount),
+			OpenIssuesCount: int32(repo.OpenIssuesCount),
+			CreatedAt:       repo.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:       repo.UpdatedAt.Format(time.RFC3339),
+		}
+		pbRepos = append(pbRepos, pbRepo)
+	}
+
+	// We'll just return the count of returned items
+	totalCount := len(pbRepos)
+
+	return &pb.ListRepositoriesResponse{
+		Repositories: pbRepos,
+		TotalCount:   int32(totalCount),
+	}, nil
 }
 
 // ParseIssues парсит issues репозитория
@@ -109,7 +161,7 @@ func (h *Handler) ParseIssues(ctx context.Context, req *pb.ParseIssuesRequest) (
 	}, nil
 }
 
-// ListIssues возвращает список issues
+// ListIssues returns a list of issues
 func (h *Handler) ListIssues(ctx context.Context, req *pb.ListIssuesRequest) (*pb.ListIssuesResponse, error) {
 	filter := repository.IssueFilter{
 		RepositoryID: req.RepositoryId,
@@ -118,10 +170,44 @@ func (h *Handler) ListIssues(ctx context.Context, req *pb.ListIssuesRequest) (*p
 		Offset:       int(req.Offset),
 	}
 
-	// Здесь требуется реализация метода List репозитория
-	// Для примера заглушка
-	h.logger.Error("ListIssues method not implemented")
-	return nil, status.Errorf(codes.Unimplemented, "method not implemented")
+	// Apply defaults if not specified
+	if filter.Limit <= 0 {
+		filter.Limit = 20 // Default limit
+	}
+
+	// Get issues from MongoDB
+	issues, err := h.issueRepo.List(ctx, filter)
+	if err != nil {
+		h.logger.Error("Failed to list issues: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to list issues: %v", err)
+	}
+
+	// Convert to protobuf format
+	var pbIssues []*pb.Issue
+	for _, issue := range issues {
+		pbIssue := &pb.Issue{
+			Id:           issue.ID,
+			Number:       int32(issue.Number),
+			Title:        issue.Title,
+			Body:         issue.Body,
+			State:        issue.State,
+			AuthorLogin:  issue.AuthorLogin,
+			RepositoryId: issue.RepositoryID,
+			CreatedAt:    issue.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:    issue.UpdatedAt.Format(time.RFC3339),
+		}
+
+		if issue.ClosedAt != nil {
+			pbIssue.ClosedAt = issue.ClosedAt.Format(time.RFC3339)
+		}
+
+		pbIssues = append(pbIssues, pbIssue)
+	}
+
+	return &pb.ListIssuesResponse{
+		Issues:     pbIssues,
+		TotalCount: int32(len(pbIssues)),
+	}, nil
 }
 
 // ParsePullRequests парсит pull requests репозитория
@@ -166,7 +252,7 @@ func (h *Handler) ParsePullRequests(ctx context.Context, req *pb.ParsePullReques
 	}, nil
 }
 
-// ListPullRequests возвращает список pull requests
+// ListPullRequests returns a list of pull requests
 func (h *Handler) ListPullRequests(ctx context.Context, req *pb.ListPullRequestsRequest) (*pb.ListPullRequestsResponse, error) {
 	filter := repository.PullRequestFilter{
 		RepositoryID: req.RepositoryId,
@@ -175,10 +261,48 @@ func (h *Handler) ListPullRequests(ctx context.Context, req *pb.ListPullRequests
 		Offset:       int(req.Offset),
 	}
 
-	// Здесь требуется реализация метода List репозитория
-	// Для примера заглушка
-	h.logger.Error("ListPullRequests method not implemented")
-	return nil, status.Errorf(codes.Unimplemented, "method not implemented")
+	// Apply defaults if not specified
+	if filter.Limit <= 0 {
+		filter.Limit = 20 // Default limit
+	}
+
+	// Get PRs from MongoDB
+	prs, err := h.prRepo.List(ctx, filter)
+	if err != nil {
+		h.logger.Error("Failed to list pull requests: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to list pull requests: %v", err)
+	}
+
+	// Convert to protobuf format
+	var pbPRs []*pb.PullRequest
+	for _, pr := range prs {
+		pbPR := &pb.PullRequest{
+			Id:           pr.ID,
+			Number:       int32(pr.Number),
+			Title:        pr.Title,
+			Body:         pr.Body,
+			State:        pr.State,
+			AuthorLogin:  pr.AuthorLogin,
+			RepositoryId: pr.RepositoryID,
+			CreatedAt:    pr.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:    pr.UpdatedAt.Format(time.RFC3339),
+		}
+
+		if pr.MergedAt != nil {
+			pbPR.MergedAt = pr.MergedAt.Format(time.RFC3339)
+		}
+
+		if pr.ClosedAt != nil {
+			pbPR.ClosedAt = pr.ClosedAt.Format(time.RFC3339)
+		}
+
+		pbPRs = append(pbPRs, pbPR)
+	}
+
+	return &pb.ListPullRequestsResponse{
+		PullRequests: pbPRs,
+		TotalCount:   int32(len(pbPRs)),
+	}, nil
 }
 
 // ParseUser парсит пользователя GitHub
@@ -209,7 +333,7 @@ func (h *Handler) ParseUser(ctx context.Context, req *pb.ParseUserRequest) (*pb.
 	}, nil
 }
 
-// ListUsers возвращает список пользователей
+// ListUsers returns a list of users
 func (h *Handler) ListUsers(ctx context.Context, req *pb.ListUsersRequest) (*pb.ListUsersResponse, error) {
 	filter := repository.UserFilter{
 		Login:  req.Login,
@@ -217,10 +341,40 @@ func (h *Handler) ListUsers(ctx context.Context, req *pb.ListUsersRequest) (*pb.
 		Offset: int(req.Offset),
 	}
 
-	// Здесь требуется реализация метода List репозитория
-	// Для примера заглушка
-	h.logger.Error("ListUsers method not implemented")
-	return nil, status.Errorf(codes.Unimplemented, "method not implemented")
+	// Apply defaults if not specified
+	if filter.Limit <= 0 {
+		filter.Limit = 20 // Default limit
+	}
+
+	// Get users from MongoDB
+	users, err := h.userRepo.List(ctx, filter)
+	if err != nil {
+		h.logger.Error("Failed to list users: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to list users: %v", err)
+	}
+
+	// Convert to protobuf format
+	var pbUsers []*pb.User
+	for _, user := range users {
+		pbUser := &pb.User{
+			Id:        user.ID,
+			Login:     user.Login,
+			Name:      user.Name,
+			Email:     user.Email,
+			AvatarUrl: user.AvatarURL,
+			Bio:       user.Bio,
+			Company:   user.Company,
+			Location:  user.Location,
+			CreatedAt: user.CreatedAt.Format(time.RFC3339),
+			UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
+		}
+		pbUsers = append(pbUsers, pbUser)
+	}
+
+	return &pb.ListUsersResponse{
+		Users:      pbUsers,
+		TotalCount: int32(len(pbUsers)),
+	}, nil
 }
 
 // StartParsingJob запускает асинхронную задачу парсинга
@@ -268,4 +422,3 @@ func (h *Handler) GetParsingJobStatus(ctx context.Context, req *pb.GetParsingJob
 		CreatedAt:    jobStatus.CreatedAt,
 		UpdatedAt:    jobStatus.UpdatedAt,
 	}, nil
-}

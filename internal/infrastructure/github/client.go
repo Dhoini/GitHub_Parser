@@ -2,6 +2,9 @@ package github
 
 import (
 	"context"
+	"time"
+
+	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/metrics"
 	"github.com/Dhoini/GitHub_Parser/pkg/utils/RateLimiter"
 	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger"
 	"github.com/google/go-github/v39/github"
@@ -11,10 +14,11 @@ import (
 type Client struct {
 	client    *github.Client
 	rateLimit *RateLimiter.RateLimit
+	metrics   *metrics.Metrics
 	logger    *logger.Logger
 }
 
-func NewGithubClient(token string, logger *logger.Logger) *Client {
+func NewGithubClient(token string, metrics *metrics.Metrics, logger *logger.Logger) *Client {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
@@ -24,79 +28,136 @@ func NewGithubClient(token string, logger *logger.Logger) *Client {
 	return &Client{
 		client:    github.NewClient(tc),
 		rateLimit: RateLimiter.NewRateLimit(logger),
+		metrics:   metrics,
 		logger:    logger,
 	}
 }
 
-// GetClient возвращает клиент GitHub
+// GetClient returns the GitHub client
 func (c *Client) GetClient() *github.Client {
 	return c.client
 }
 
-// GetRateLimit возвращает контроллер ограничения запросов
+// GetRateLimit returns the rate limit controller
 func (c *Client) GetRateLimit() *RateLimiter.RateLimit {
 	return c.rateLimit
 }
 
-// GetRepository получает репозиторий с соблюдением ограничений API
+// GetRepository gets a repository with rate limiting
 func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, error) {
-	// Ожидаем, если необходимо, чтобы соблюсти ограничения API
+	// Wait if necessary to comply with API rate limits
 	if err := c.rateLimit.Wait(ctx); err != nil {
 		return nil, err
 	}
 
-	repository, _, err := c.client.Repositories.Get(ctx, owner, repo)
+	// Record metrics
+	c.metrics.APIRequests.WithLabelValues("GetRepository").Inc()
+	start := time.Now()
+	defer func() {
+		c.metrics.APILatency.WithLabelValues("GetRepository").Observe(time.Since(start).Seconds())
+	}()
+
+	// Make the API call
+	repository, resp, err := c.client.Repositories.Get(ctx, owner, repo)
 	if err != nil {
 		c.logger.Error("Failed to get repository: %v", err)
+		c.metrics.Errors.WithLabelValues("GetRepository").Inc()
 		return nil, err
+	}
+
+	// Update rate limits based on response
+	if resp.Rate.Remaining > 0 {
+		c.rateLimit.UpdateLimits(resp.Rate.Remaining, resp.Rate.Reset.Time)
 	}
 
 	return repository, nil
 }
 
-// GetIssues получает issues репозитория с соблюдением ограничений API
+// GetIssues gets repository issues with rate limiting
 func (c *Client) GetIssues(ctx context.Context, owner, repo string, opts *github.IssueListByRepoOptions) ([]*github.Issue, error) {
-	// Ожидаем, если необходимо, чтобы соблюсти ограничения API
+	// Wait if necessary to comply with API rate limits
 	if err := c.rateLimit.Wait(ctx); err != nil {
 		return nil, err
 	}
 
-	issues, _, err := c.client.Issues.ListByRepo(ctx, owner, repo, opts)
+	// Record metrics
+	c.metrics.APIRequests.WithLabelValues("GetIssues").Inc()
+	start := time.Now()
+	defer func() {
+		c.metrics.APILatency.WithLabelValues("GetIssues").Observe(time.Since(start).Seconds())
+	}()
+
+	// Make the API call
+	issues, resp, err := c.client.Issues.ListByRepo(ctx, owner, repo, opts)
 	if err != nil {
 		c.logger.Error("Failed to get issues: %v", err)
+		c.metrics.Errors.WithLabelValues("GetIssues").Inc()
 		return nil, err
+	}
+
+	// Update rate limits based on response
+	if resp.Rate.Remaining > 0 {
+		c.rateLimit.UpdateLimits(resp.Rate.Remaining, resp.Rate.Reset.Time)
 	}
 
 	return issues, nil
 }
 
-// GetPullRequests получает pull requests репозитория с соблюдением ограничений API
+// GetPullRequests gets repository pull requests with rate limiting
 func (c *Client) GetPullRequests(ctx context.Context, owner, repo string, opts *github.PullRequestListOptions) ([]*github.PullRequest, error) {
-	// Ожидаем, если необходимо, чтобы соблюсти ограничения API
+	// Wait if necessary to comply with API rate limits
 	if err := c.rateLimit.Wait(ctx); err != nil {
 		return nil, err
 	}
 
-	prs, _, err := c.client.PullRequests.List(ctx, owner, repo, opts)
+	// Record metrics
+	c.metrics.APIRequests.WithLabelValues("GetPullRequests").Inc()
+	start := time.Now()
+	defer func() {
+		c.metrics.APILatency.WithLabelValues("GetPullRequests").Observe(time.Since(start).Seconds())
+	}()
+
+	// Make the API call
+	prs, resp, err := c.client.PullRequests.List(ctx, owner, repo, opts)
 	if err != nil {
 		c.logger.Error("Failed to get pull requests: %v", err)
+		c.metrics.Errors.WithLabelValues("GetPullRequests").Inc()
 		return nil, err
+	}
+
+	// Update rate limits based on response
+	if resp.Rate.Remaining > 0 {
+		c.rateLimit.UpdateLimits(resp.Rate.Remaining, resp.Rate.Reset.Time)
 	}
 
 	return prs, nil
 }
 
-// GetUser получает пользователя с соблюдением ограничений API
+// GetUser gets a user with rate limiting
 func (c *Client) GetUser(ctx context.Context, username string) (*github.User, error) {
-	// Ожидаем, если необходимо, чтобы соблюсти ограничения API
+	// Wait if necessary to comply with API rate limits
 	if err := c.rateLimit.Wait(ctx); err != nil {
 		return nil, err
 	}
 
-	user, _, err := c.client.Users.Get(ctx, username)
+	// Record metrics
+	c.metrics.APIRequests.WithLabelValues("GetUser").Inc()
+	start := time.Now()
+	defer func() {
+		c.metrics.APILatency.WithLabelValues("GetUser").Observe(time.Since(start).Seconds())
+	}()
+
+	// Make the API call
+	user, resp, err := c.client.Users.Get(ctx, username)
 	if err != nil {
 		c.logger.Error("Failed to get user: %v", err)
+		c.metrics.Errors.WithLabelValues("GetUser").Inc()
 		return nil, err
+	}
+
+	// Update rate limits based on response
+	if resp.Rate.Remaining > 0 {
+		c.rateLimit.UpdateLimits(resp.Rate.Remaining, resp.Rate.Reset.Time)
 	}
 
 	return user, nil

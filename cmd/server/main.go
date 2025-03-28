@@ -13,6 +13,7 @@ import (
 	"github.com/Dhoini/GitHub_Parser/internal/config"
 	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/api/proto"
 	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/github"
+	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/metrics"
 	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/persistence/mongodb"
 	grpcHandler "github.com/Dhoini/GitHub_Parser/internal/interfaces/grpc"
 	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger"
@@ -26,6 +27,11 @@ func main() {
 	customLogger := logger.New(logger.DEBUG)
 	customLogger.Info("Starting GitHub Parser service")
 
+	// Инициализация метрик
+	appMetrics := metrics.NewMetrics(customLogger)
+	metrics.StartMetricsServer(":9090", customLogger)
+	customLogger.Info("Metrics server started on :9090")
+
 	// Загрузка конфигурации
 	cfg, err := config.Load()
 	if err != nil {
@@ -38,6 +44,9 @@ func main() {
 		customLogger.Fatal("Failed to connect to MongoDB: %v", err)
 	}
 
+	// Обновляем метрику открытых соединений
+	appMetrics.DBConnectionsOpen.Set(float64(mongoClient.NumberSessionsInProgress()))
+
 	db := mongoClient.Database(cfg.MongoDB.Database)
 
 	// Инициализация репозиториев
@@ -47,7 +56,7 @@ func main() {
 	userRepo := mongodb.NewUserRepository(db, customLogger)
 
 	// Инициализация клиента GitHub
-	githubClient := github.NewGithubClient(cfg.GitHub.Token, customLogger)
+	githubClient := github.NewGithubClient(cfg.GitHub.Token, appMetrics, customLogger)
 
 	// Инициализация сервисов
 	githubService := service.NewGithubService(githubClient.GetClient(), customLogger)
@@ -55,7 +64,14 @@ func main() {
 
 	// Инициализация gRPC сервера
 	server := grpc.NewServer()
-	handler := grpcHandler.NewHandler(parserService, customLogger)
+	handler := grpcHandler.NewHandler(
+		parserService,
+		repoRepo,
+		issueRepo,
+		prRepo,
+		userRepo,
+		customLogger,
+	)
 	proto.RegisterGithubParserServiceServer(server, handler)
 
 	// Запуск gRPC сервера
@@ -94,7 +110,14 @@ func connectMongoDB(uri string) (*mongo.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	clientOptions := options.Client().ApplyURI(uri)
+
+	// Add connection pooling settings
+	clientOptions.SetMinPoolSize(5)
+	clientOptions.SetMaxPoolSize(100)
+	clientOptions.SetMaxConnIdleTime(30 * time.Minute)
+
+	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return nil, err
 	}

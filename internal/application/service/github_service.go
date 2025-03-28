@@ -9,20 +9,20 @@ import (
 
 type GithubServiceImpl struct {
 	client *github.Client
-	logger *logger.Logger
+	logger *logger.Logger // Замените на ваш логгер
 }
 
 func NewGithubService(client *github.Client, logger *logger.Logger) *GithubServiceImpl {
 	return &GithubServiceImpl{
 		client: client,
-		logger: logger,
+		logger: logger, // Замените на ваш логгер
 	}
 }
 
 func (s *GithubServiceImpl) GetRepository(ctx context.Context, owner, name string) (*entity.Repository, error) {
 	repo, _, err := s.client.Repositories.Get(ctx, owner, name)
 	if err != nil {
-		s.logger.Error("Error getting repository: %v", err)
+		s.logger.Error("Ошибка получения репозитория: %v", err) // Замените на ваш логгер
 		return nil, err
 	}
 

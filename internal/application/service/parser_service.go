@@ -8,8 +8,7 @@ import (
 	"github.com/Dhoini/GitHub_Parser/internal/domain/entity"
 	"github.com/Dhoini/GitHub_Parser/internal/domain/repository"
 	domainService "github.com/Dhoini/GitHub_Parser/internal/domain/service"
-	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger"
-	"github.com/google/go-github/v39/github"
+	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger" // Замените на ваш логгер
 )
 
 type ParserServiceImpl struct {
@@ -18,20 +17,9 @@ type ParserServiceImpl struct {
 	issueRepo     repository.IssueRepository
 	prRepo        repository.PullRequestRepository
 	userRepo      repository.UserRepository
-	logger        *logger.Logger
+	logger        *logger.Logger // Замените на ваш логгер
 	// Map для хранения активных задач парсинга
-	// В реальном приложении это должно храниться в БД
 	jobs map[string]*JobInfo
-}
-
-type JobInfo struct {
-	ID           string
-	Status       string // "pending", "in_progress", "completed", "failed"
-	Progress     int    // 0-100
-	ErrorMessage string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	Params       domainService.ParsingJobParams
 }
 
 func NewParserService(
@@ -40,7 +28,7 @@ func NewParserService(
 	issueRepo repository.IssueRepository,
 	prRepo repository.PullRequestRepository,
 	userRepo repository.UserRepository,
-	logger *logger.Logger,
+	logger *logger.Logger, // Замените на ваш логгер
 ) *ParserServiceImpl {
 	return &ParserServiceImpl{
 		githubService: githubService,
@@ -48,27 +36,27 @@ func NewParserService(
 		issueRepo:     issueRepo,
 		prRepo:        prRepo,
 		userRepo:      userRepo,
-		logger:        logger,
+		logger:        logger, // Замените на ваш логгер
 		jobs:          make(map[string]*JobInfo),
 	}
 }
 
 func (s *ParserServiceImpl) ParseRepository(ctx context.Context, owner, name string) (*entity.Repository, error) {
-	// Получаем репозиторий из GitHub API
 	repo, err := s.githubService.GetRepository(ctx, owner, name)
 	if err != nil {
-		s.logger.Error("Failed to get repository from GitHub API: %v", err)
+		s.logger.Error("Не удалось получить репозиторий из GitHub API: %v", err) // Замените на ваш логгер
 		return nil, err
 	}
 
-	// Сохраняем в БД
 	if err := s.repoRepo.Save(ctx, repo); err != nil {
-		s.logger.Error("Error saving repository: %v", err)
+		s.logger.Error("Ошибка сохранения репозитория: %v", err) // Замените на ваш логгер
 		return nil, err
 	}
 
 	return repo, nil
 }
+
+// Остальные методы аналогично...
 
 func (s *ParserServiceImpl) ParseIssues(ctx context.Context, owner, repo string) ([]*entity.Issue, error) {
 	// Получаем репозиторий, чтобы убедиться, что он существует и у нас есть его ID
