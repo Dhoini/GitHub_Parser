@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package github.parser;
+option go_package = "github.com/Dhoini/GitHub_Parser/internal/infrastructure/api/proto";
+
+service GithubParserService {
+  // Репозитории
+  rpc ParseRepository(ParseRepositoryRequest) returns (ParseRepositoryResponse);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+
+  // Issues
+  rpc ParseIssues(ParseIssuesRequest) returns (ParseIssuesResponse);
+  rpc ListIssues(ListIssuesRequest) returns (ListIssuesResponse);
+
+  // Pull Requests
+  rpc ParsePullRequests(ParsePullRequestsRequest) returns (ParsePullRequestsResponse);
+  rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
+
+  // Пользователи
+  rpc ParseUser(ParseUserRequest) returns (ParseUserResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+
+  // Задачи парсинга
+  rpc StartParsingJob(StartParsingJobRequest) returns (StartParsingJobResponse);
+  rpc GetParsingJobStatus(GetParsingJobStatusRequest) returns (GetParsingJobStatusResponse);
+}
+
+// Запросы и ответы для работы с репозиториями
+message ParseRepositoryRequest {
+  string owner = 1;
+  string name = 2;
+}
+
+message ParseRepositoryResponse {
+  Repository repository = 1;
+}
+
+message Repository {
+  int64 id = 1;
+  string name = 2;
+  string full_name = 3;
+  string description = 4;
+  bool is_private = 5;
+  string owner_login = 6;
+  string language = 7;
+  int32 stars_count = 8;
+  int32 forks_count = 9;
+  int32 open_issues_count = 10;
+  string created_at = 11;
+  string updated_at = 12;
+}
+
+// Добавьте определения для других сущностей и запросов
