@@ -11,6 +11,15 @@ import (
 	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger" // Замените на ваш логгер
 )
 
+type JobInfo struct {
+	ID           string
+	Status       string // "pending", "in_progress", "completed", "failed"
+	Progress     int    // 0-100
+	ErrorMessage string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	Params       domainService.ParsingJobParams
+}
 type ParserServiceImpl struct {
 	githubService domainService.GithubService
 	repoRepo      repository.RepositoryRepository
