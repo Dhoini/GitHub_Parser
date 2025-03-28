@@ -35,6 +35,19 @@ message ParseRepositoryResponse {
   Repository repository = 1;
 }
 
+message ListRepositoriesRequest {
+  string owner_login = 1;
+  string language = 2;
+  int32 min_stars = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+}
+
+message ListRepositoriesResponse {
+  repeated Repository repositories = 1;
+  int32 total_count = 2;
+}
+
 message Repository {
   int64 id = 1;
   string name = 2;
@@ -50,4 +63,132 @@ message Repository {
   string updated_at = 12;
 }
 
-// Добавьте определения для других сущностей и запросов
+// Запросы и ответы для работы с issues
+message ParseIssuesRequest {
+  string owner = 1;
+  string repo = 2;
+}
+
+message ParseIssuesResponse {
+  repeated Issue issues = 1;
+}
+
+message ListIssuesRequest {
+  int64 repository_id = 1;
+  string state = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message ListIssuesResponse {
+  repeated Issue issues = 1;
+  int32 total_count = 2;
+}
+
+message Issue {
+  int64 id = 1;
+  int32 number = 2;
+  string title = 3;
+  string body = 4;
+  string state = 5;
+  string author_login = 6;
+  int64 repository_id = 7;
+  string created_at = 8;
+  string updated_at = 9;
+  string closed_at = 10;
+}
+
+// Запросы и ответы для работы с pull requests
+message ParsePullRequestsRequest {
+  string owner = 1;
+  string repo = 2;
+}
+
+message ParsePullRequestsResponse {
+  repeated PullRequest pull_requests = 1;
+}
+
+message ListPullRequestsRequest {
+  int64 repository_id = 1;
+  string state = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message ListPullRequestsResponse {
+  repeated PullRequest pull_requests = 1;
+  int32 total_count = 2;
+}
+
+message PullRequest {
+  int64 id = 1;
+  int32 number = 2;
+  string title = 3;
+  string body = 4;
+  string state = 5;
+  string author_login = 6;
+  int64 repository_id = 7;
+  string created_at = 8;
+  string updated_at = 9;
+  string merged_at = 10;
+  string closed_at = 11;
+}
+
+// Запросы и ответы для работы с пользователями
+message ParseUserRequest {
+  string username = 1;
+}
+
+message ParseUserResponse {
+  User user = 1;
+}
+
+message ListUsersRequest {
+  string login = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  int32 total_count = 2;
+}
+
+message User {
+  int64 id = 1;
+  string login = 2;
+  string name = 3;
+  string email = 4;
+  string avatar_url = 5;
+  string bio = 6;
+  string company = 7;
+  string location = 8;
+  string created_at = 9;
+  string updated_at = 10;
+}
+
+// Запросы и ответы для работы с задачами парсинга
+message StartParsingJobRequest {
+  string owner_name = 1;
+  string repo_name = 2;
+  bool parse_issues = 3;
+  bool parse_pull_requests = 4;
+  bool parse_users = 5;
+}
+
+message StartParsingJobResponse {
+  string job_id = 1;
+}
+
+message GetParsingJobStatusRequest {
+  string job_id = 1;
+}
+
+message GetParsingJobStatusResponse {
+  string id = 1;
+  string status = 2;
+  int32 progress = 3;
+  string error_message = 4;
+  string created_at = 5;
+  string updated_at = 6;
+}

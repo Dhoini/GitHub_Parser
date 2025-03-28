@@ -1,68 +1,73 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/Dhoini/GitHub_Parser/internal/application/service"
-	"github.com/Dhoini/GitHub_Parser/internal/config"
-	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/github"
-	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/persistence/mongodb"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/Dhoini/GitHub_Parser/internal/application/service"
+	"github.com/Dhoini/GitHub_Parser/internal/config"
+	pb "github.com/Dhoini/GitHub_Parser/internal/infrastructure/api/proto"
+	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/github"
+	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/persistence/mongodb"
+	grpcHandler "github.com/Dhoini/GitHub_Parser/internal/interfaces/grpc"
+	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"google.golang.org/grpc"
 )
 
 func main() {
 	// Инициализация логгера
-	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	customLogger := logger.New(logger.DEBUG)
+	customLogger.Info("Starting GitHub Parser service")
 
 	// Загрузка конфигурации
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
+		customLogger.Fatal("Failed to load config: %v", err)
 	}
 
 	// Подключение к MongoDB
 	mongoClient, err := connectMongoDB(cfg.MongoDB.URI)
 	if err != nil {
-		logger.Fatal("Failed to connect to MongoDB", zap.Error(err))
+		customLogger.Fatal("Failed to connect to MongoDB: %v", err)
 	}
 
 	db := mongoClient.Database(cfg.MongoDB.Database)
 
 	// Инициализация репозиториев
-	repoRepo := mongodb.NewRepositoryRepository(db, logger)
-	issueRepo := mongodb.NewIssueRepository(db, logger)
-	prRepo := mongodb.NewPullRequestRepository(db, logger)
-	userRepo := mongodb.NewUserRepository(db, logger)
+	repoRepo := mongodb.NewRepositoryRepository(db, customLogger)
+	issueRepo := mongodb.NewIssueRepository(db, customLogger)
+	prRepo := mongodb.NewPullRequestRepository(db, customLogger)
+	userRepo := mongodb.NewUserRepository(db, customLogger)
 
 	// Инициализация клиента GitHub
-	githubClient := github.NewGithubClient(cfg.GitHub.Token, logger)
+	githubClient := github.NewGithubClient(cfg.GitHub.Token, customLogger)
 
 	// Инициализация сервисов
-	githubService := service.NewGithubService(githubClient.GetClient(), logger)
-	parserService := service.NewParserService(githubService, repoRepo, issueRepo, prRepo, userRepo, logger)
+	githubService := service.NewGithubService(githubClient.GetClient(), customLogger)
+	parserService := service.NewParserService(githubService, repoRepo, issueRepo, prRepo, userRepo, customLogger)
 
 	// Инициализация gRPC сервера
 	server := grpc.NewServer()
-	handler := grpcHandler.NewHandler(parserService, logger)
+	handler := grpcHandler.NewHandler(parserService, customLogger)
 	pb.RegisterGithubParserServiceServer(server, handler)
 
 	// Запуск gRPC сервера
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Server.Port))
 	if err != nil {
-		logger.Fatal("Failed to listen", zap.Error(err))
+		customLogger.Fatal("Failed to listen: %v", err)
 	}
 
 	go func() {
-		logger.Info("Starting gRPC server", zap.Int("port", cfg.Server.Port))
+		customLogger.Info("Starting gRPC server on port %d", cfg.Server.Port)
 		if err := server.Serve(lis); err != nil {
-			logger.Fatal("Failed to serve", zap.Error(err))
+			customLogger.Fatal("Failed to serve: %v", err)
 		}
 	}()
 
@@ -71,7 +76,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down server...")
+	customLogger.Info("Shutting down server...")
 
 	server.GracefulStop()
 
@@ -79,10 +84,10 @@ func main() {
 	defer cancel()
 
 	if err := mongoClient.Disconnect(ctx); err != nil {
-		logger.Error("Error disconnecting from MongoDB", zap.Error(err))
+		customLogger.Error("Error disconnecting from MongoDB: %v", err)
 	}
 
-	logger.Info("Server stopped")
+	customLogger.Info("Server stopped")
 }
 
 func connectMongoDB(uri string) (*mongo.Client, error) {
