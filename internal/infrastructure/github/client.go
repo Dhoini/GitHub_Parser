@@ -62,11 +62,17 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*github
 	if err != nil {
 		c.logger.Error("Failed to get repository: %v", err)
 		c.metrics.Errors.WithLabelValues("GetRepository").Inc()
+
+		// Если это ошибка лимита запросов, обновляем информацию о лимите
+		if resp != nil && resp.Rate.Remaining == 0 {
+			c.rateLimit.UpdateLimits(0, resp.Rate.Reset.Time)
+		}
+
 		return nil, err
 	}
 
 	// Update rate limits based on response
-	if resp.Rate.Remaining > 0 {
+	if resp.Rate.Remaining >= 0 {
 		c.rateLimit.UpdateLimits(resp.Rate.Remaining, resp.Rate.Reset.Time)
 	}
 
@@ -92,11 +98,17 @@ func (c *Client) GetIssues(ctx context.Context, owner, repo string, opts *github
 	if err != nil {
 		c.logger.Error("Failed to get issues: %v", err)
 		c.metrics.Errors.WithLabelValues("GetIssues").Inc()
+
+		// Если это ошибка лимита запросов, обновляем информацию о лимите
+		if resp != nil && resp.Rate.Remaining == 0 {
+			c.rateLimit.UpdateLimits(0, resp.Rate.Reset.Time)
+		}
+
 		return nil, err
 	}
 
 	// Update rate limits based on response
-	if resp.Rate.Remaining > 0 {
+	if resp.Rate.Remaining >= 0 {
 		c.rateLimit.UpdateLimits(resp.Rate.Remaining, resp.Rate.Reset.Time)
 	}
 
@@ -122,11 +134,17 @@ func (c *Client) GetPullRequests(ctx context.Context, owner, repo string, opts *
 	if err != nil {
 		c.logger.Error("Failed to get pull requests: %v", err)
 		c.metrics.Errors.WithLabelValues("GetPullRequests").Inc()
+
+		// Если это ошибка лимита запросов, обновляем информацию о лимите
+		if resp != nil && resp.Rate.Remaining == 0 {
+			c.rateLimit.UpdateLimits(0, resp.Rate.Reset.Time)
+		}
+
 		return nil, err
 	}
 
 	// Update rate limits based on response
-	if resp.Rate.Remaining > 0 {
+	if resp.Rate.Remaining >= 0 {
 		c.rateLimit.UpdateLimits(resp.Rate.Remaining, resp.Rate.Reset.Time)
 	}
 
@@ -152,11 +170,17 @@ func (c *Client) GetUser(ctx context.Context, username string) (*github.User, er
 	if err != nil {
 		c.logger.Error("Failed to get user: %v", err)
 		c.metrics.Errors.WithLabelValues("GetUser").Inc()
+
+		// Если это ошибка лимита запросов, обновляем информацию о лимите
+		if resp != nil && resp.Rate.Remaining == 0 {
+			c.rateLimit.UpdateLimits(0, resp.Rate.Reset.Time)
+		}
+
 		return nil, err
 	}
 
 	// Update rate limits based on response
-	if resp.Rate.Remaining > 0 {
+	if resp.Rate.Remaining >= 0 {
 		c.rateLimit.UpdateLimits(resp.Rate.Remaining, resp.Rate.Reset.Time)
 	}
 

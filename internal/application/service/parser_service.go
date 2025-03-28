@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"go.mongodb.org/mongo-driver/mongo"
 	"time"
 
 	"github.com/Dhoini/GitHub_Parser/internal/domain/entity"
@@ -53,14 +54,18 @@ func NewParserService(
 func (s *ParserServiceImpl) ParseRepository(ctx context.Context, owner, name string) (*entity.Repository, error) {
 	repo, err := s.githubService.GetRepository(ctx, owner, name)
 	if err != nil {
-		s.logger.Error("Не удалось получить репозиторий из GitHub API: %v", err) // Замените на ваш логгер
+		s.logger.Error("Failed to get repository from GitHub API: %v", err)
 		return nil, err
 	}
 
 	if err := s.repoRepo.Save(ctx, repo); err != nil {
-		s.logger.Error("Ошибка сохранения репозитория: %v", err) // Замените на ваш логгер
+		s.logger.Error("Error saving repository: %v", err)
 		return nil, err
 	}
+
+	// Инкрементируем метрику после успешного парсинга и сохранения
+	s.metrics.ParsedRepositories.Inc()
+	s.metrics.DBOperations.WithLabelValues("save", "repository").Inc()
 
 	return repo, nil
 }
@@ -258,4 +263,62 @@ func (s *ParserServiceImpl) processParsingJob(ctx context.Context, jobID string)
 	job.Progress = 100
 	job.UpdatedAt = time.Now()
 	s.logger.Info("Job %s completed successfully", jobID)
+}
+
+func (s *ParserServiceImpl) ParseRepositoryWithDetails(ctx context.Context, owner, name string, parseIssues, parsePRs bool) (*entity.Repository, error) {
+	// Запускаем транзакцию
+	session, err := s.mongoClient.StartSession()
+	if err != nil {
+		s.logger.Error("Failed to start MongoDB session: %v", err)
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+
+	var repo *entity.Repository
+
+	err = session.WithTransaction(ctx, func(sessCtx mongo.SessionContext) error {
+		// Получаем и сохраняем репозиторий
+		repo, err = s.githubService.GetRepository(sessCtx, owner, name)
+		if err != nil {
+			return err
+		}
+
+		if err := s.repoRepo.Save(sessCtx, repo); err != nil {
+			return err
+		}
+
+		// Если нужно парсить issues
+		if parseIssues {
+			issues, err := s.githubService.GetIssues(sessCtx, owner, name, 1, 100)
+			if err != nil {
+				return err
+			}
+
+			for _, issue := range issues {
+				issue.RepositoryID = repo.ID
+				if err := s.issueRepo.Save(sessCtx, issue); err != nil {
+					return err
+				}
+			}
+
+			// Обновляем метрики
+			s.metrics.ParsedIssues.Add(float64(len(issues)))
+		}
+
+		// Аналогично для PRs
+		if parsePRs {
+			// Реализация
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Обновляем метрики
+	s.metrics.ParsedRepositories.Inc()
+
+	return repo, nil
 }
