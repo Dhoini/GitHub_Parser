@@ -23,46 +23,55 @@ import (
 )
 
 func main() {
-	// Инициализация логгера
+	// Initialize logger
 	customLogger := logger.New(logger.DEBUG)
 	customLogger.Info("Starting GitHub Parser service")
 
-	// Инициализация метрик
+	// Initialize metrics
 	appMetrics := metrics.NewMetrics(customLogger)
 	metrics.StartMetricsServer(":9090", customLogger)
 	customLogger.Info("Metrics server started on :9090")
 
-	// Загрузка конфигурации
+	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		customLogger.Fatal("Failed to load config: %v", err)
 	}
 
-	// Подключение к MongoDB
+	// Connect to MongoDB
 	mongoClient, err := connectMongoDB(cfg.MongoDB.URI)
 	if err != nil {
 		customLogger.Fatal("Failed to connect to MongoDB: %v", err)
 	}
 
-	// Обновляем метрику открытых соединений
+	// Update metrics for open connections
 	appMetrics.DBConnectionsOpen.Set(float64(mongoClient.NumberSessionsInProgress()))
 
 	db := mongoClient.Database(cfg.MongoDB.Database)
 
-	// Инициализация репозиториев
+	// Initialize repositories
 	repoRepo := mongodb.NewRepositoryRepository(db, customLogger)
 	issueRepo := mongodb.NewIssueRepository(db, customLogger)
 	prRepo := mongodb.NewPullRequestRepository(db, customLogger)
 	userRepo := mongodb.NewUserRepository(db, customLogger)
 
-	// Инициализация клиента GitHub
+	// Initialize GitHub client
 	githubClient := github.NewGithubClient(cfg.GitHub.Token, appMetrics, customLogger)
 
-	// Инициализация сервисов
+	// Initialize services
 	githubService := service.NewGithubService(githubClient.GetClient(), customLogger)
-	parserService := service.NewParserService(githubService, repoRepo, issueRepo, prRepo, userRepo, customLogger)
+	parserService := service.NewParserService(
+		githubService,
+		repoRepo,
+		issueRepo,
+		prRepo,
+		userRepo,
+		mongoClient, // Pass mongo client for transaction support
+		appMetrics,  // Pass metrics
+		customLogger,
+	)
 
-	// Инициализация gRPC сервера
+	// Initialize gRPC server
 	server := grpc.NewServer()
 	handler := grpcHandler.NewHandler(
 		parserService,
@@ -74,7 +83,7 @@ func main() {
 	)
 	proto.RegisterGithubParserServiceServer(server, handler)
 
-	// Запуск gRPC сервера
+	// Start gRPC server
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Server.Port))
 	if err != nil {
 		customLogger.Fatal("Failed to listen: %v", err)
@@ -87,7 +96,7 @@ func main() {
 		}
 	}()
 
-	// Настройка graceful shutdown
+	// Setup graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

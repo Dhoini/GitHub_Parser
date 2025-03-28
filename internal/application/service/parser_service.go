@@ -3,13 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
-	"go.mongodb.org/mongo-driver/mongo"
 	"time"
 
 	"github.com/Dhoini/GitHub_Parser/internal/domain/entity"
 	"github.com/Dhoini/GitHub_Parser/internal/domain/repository"
 	domainService "github.com/Dhoini/GitHub_Parser/internal/domain/service"
-	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger" // Замените на ваш логгер
+	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/metrics"
+	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type JobInfo struct {
@@ -21,14 +22,17 @@ type JobInfo struct {
 	UpdatedAt    time.Time
 	Params       domainService.ParsingJobParams
 }
+
 type ParserServiceImpl struct {
 	githubService domainService.GithubService
 	repoRepo      repository.RepositoryRepository
 	issueRepo     repository.IssueRepository
 	prRepo        repository.PullRequestRepository
 	userRepo      repository.UserRepository
-	logger        *logger.Logger // Замените на ваш логгер
-	// Map для хранения активных задач парсинга
+	logger        *logger.Logger
+	metrics       *metrics.Metrics
+	mongoClient   *mongo.Client // Added for transaction support
+	// Map for storing active parsing jobs
 	jobs map[string]*JobInfo
 }
 
@@ -38,7 +42,9 @@ func NewParserService(
 	issueRepo repository.IssueRepository,
 	prRepo repository.PullRequestRepository,
 	userRepo repository.UserRepository,
-	logger *logger.Logger, // Замените на ваш логгер
+	mongoClient *mongo.Client,
+	metrics *metrics.Metrics,
+	logger *logger.Logger,
 ) *ParserServiceImpl {
 	return &ParserServiceImpl{
 		githubService: githubService,
@@ -46,7 +52,9 @@ func NewParserService(
 		issueRepo:     issueRepo,
 		prRepo:        prRepo,
 		userRepo:      userRepo,
-		logger:        logger, // Замените на ваш логгер
+		mongoClient:   mongoClient,
+		metrics:       metrics,
+		logger:        logger,
 		jobs:          make(map[string]*JobInfo),
 	}
 }
@@ -63,95 +71,113 @@ func (s *ParserServiceImpl) ParseRepository(ctx context.Context, owner, name str
 		return nil, err
 	}
 
-	// Инкрементируем метрику после успешного парсинга и сохранения
-	s.metrics.ParsedRepositories.Inc()
-	s.metrics.DBOperations.WithLabelValues("save", "repository").Inc()
+	// Increment metrics after successful parsing and saving
+	if s.metrics != nil {
+		s.metrics.ParsedRepositories.Inc()
+		s.metrics.DBOperations.WithLabelValues("save", "repository").Inc()
+	}
 
 	return repo, nil
 }
 
-// Остальные методы аналогично...
-
 func (s *ParserServiceImpl) ParseIssues(ctx context.Context, owner, repo string) ([]*entity.Issue, error) {
-	// Получаем репозиторий, чтобы убедиться, что он существует и у нас есть его ID
+	// Get repository to ensure it exists and we have its ID
 	repository, err := s.githubService.GetRepository(ctx, owner, repo)
 	if err != nil {
 		s.logger.Error("Failed to get repository for issues parsing: %v", err)
 		return nil, err
 	}
 
-	// Получаем issues с GitHub API (первая страница, 100 issues)
+	// Get issues from GitHub API (first page, 100 issues)
 	issues, err := s.githubService.GetIssues(ctx, owner, repo, 1, 100)
 	if err != nil {
 		s.logger.Error("Failed to get issues from GitHub API: %v", err)
 		return nil, err
 	}
 
-	// Сохраняем каждый issue в БД
+	// Save each issue to the database
 	for _, issue := range issues {
-		// Убедимся, что issue привязан к правильному репозиторию
+		// Make sure the issue is linked to the correct repository
 		issue.RepositoryID = repository.ID
 
 		if err := s.issueRepo.Save(ctx, issue); err != nil {
 			s.logger.Error("Error saving issue #%d: %v", issue.Number, err)
-			// Продолжаем даже при ошибке сохранения одного issue
+			// Continue even if there's an error saving one issue
 		}
+	}
+
+	// Increment metrics
+	if s.metrics != nil {
+		s.metrics.ParsedIssues.Add(float64(len(issues)))
+		s.metrics.DBOperations.WithLabelValues("save", "issue").Add(float64(len(issues)))
 	}
 
 	return issues, nil
 }
 
 func (s *ParserServiceImpl) ParsePullRequests(ctx context.Context, owner, repo string) ([]*entity.PullRequest, error) {
-	// Получаем репозиторий, чтобы убедиться, что он существует и у нас есть его ID
+	// Get repository to ensure it exists and we have its ID
 	repository, err := s.githubService.GetRepository(ctx, owner, repo)
 	if err != nil {
 		s.logger.Error("Failed to get repository for PR parsing: %v", err)
 		return nil, err
 	}
 
-	// Получаем PRs с GitHub API (первая страница, 100 PRs)
+	// Get PRs from GitHub API (first page, 100 PRs)
 	prs, err := s.githubService.GetPullRequests(ctx, owner, repo, 1, 100)
 	if err != nil {
 		s.logger.Error("Failed to get pull requests from GitHub API: %v", err)
 		return nil, err
 	}
 
-	// Сохраняем каждый PR в БД
+	// Save each PR to the database
 	for _, pr := range prs {
-		// Убедимся, что PR привязан к правильному репозиторию
+		// Make sure the PR is linked to the correct repository
 		pr.RepositoryID = repository.ID
 
 		if err := s.prRepo.Save(ctx, pr); err != nil {
 			s.logger.Error("Error saving PR #%d: %v", pr.Number, err)
-			// Продолжаем даже при ошибке сохранения одного PR
+			// Continue even if there's an error saving one PR
 		}
+	}
+
+	// Increment metrics
+	if s.metrics != nil {
+		s.metrics.ParsedPullRequests.Add(float64(len(prs)))
+		s.metrics.DBOperations.WithLabelValues("save", "pull_request").Add(float64(len(prs)))
 	}
 
 	return prs, nil
 }
 
 func (s *ParserServiceImpl) ParseUser(ctx context.Context, username string) (*entity.User, error) {
-	// Получаем пользователя из GitHub API
+	// Get user from GitHub API
 	user, err := s.githubService.GetUser(ctx, username)
 	if err != nil {
 		s.logger.Error("Failed to get user from GitHub API: %v", err)
 		return nil, err
 	}
 
-	// Сохраняем пользователя в БД
+	// Save user to the database
 	if err := s.userRepo.Save(ctx, user); err != nil {
 		s.logger.Error("Error saving user %s: %v", username, err)
 		return nil, err
+	}
+
+	// Increment metrics
+	if s.metrics != nil {
+		s.metrics.ParsedUsers.Inc()
+		s.metrics.DBOperations.WithLabelValues("save", "user").Inc()
 	}
 
 	return user, nil
 }
 
 func (s *ParserServiceImpl) StartParsingJob(ctx context.Context, params domainService.ParsingJobParams) (string, error) {
-	// Генерируем уникальный идентификатор задачи
+	// Generate a unique job ID
 	jobID := fmt.Sprintf("job-%d", time.Now().Unix())
 
-	// Создаем информацию о задаче
+	// Create job info
 	job := &JobInfo{
 		ID:        jobID,
 		Status:    "pending",
@@ -161,11 +187,17 @@ func (s *ParserServiceImpl) StartParsingJob(ctx context.Context, params domainSe
 		Params:    params,
 	}
 
-	// Сохраняем задачу
+	// Save the job
 	s.jobs[jobID] = job
 
-	// Запускаем задачу в отдельной горутине
-	go s.processParsingJob(ctx, jobID)
+	// Start the job in a separate goroutine
+	go s.processParsingJob(context.Background(), jobID)
+
+	// Increment job metrics
+	if s.metrics != nil {
+		s.metrics.ParsingJobs.WithLabelValues("pending").Inc()
+		s.metrics.ParsingJobsTotal.Inc()
+	}
 
 	return jobID, nil
 }
@@ -193,28 +225,42 @@ func (s *ParserServiceImpl) processParsingJob(ctx context.Context, jobID string)
 		return
 	}
 
-	// Обновляем статус задачи
+	// Update job status
 	job.Status = "in_progress"
 	job.UpdatedAt = time.Now()
 
-	// Создаем контекст с таймаутом
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	// Update metrics
+	if s.metrics != nil {
+		s.metrics.ParsingJobs.WithLabelValues("pending").Dec()
+		s.metrics.ParsingJobs.WithLabelValues("in_progress").Inc()
+	}
+
+	// Create a context with timeout
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	// Начинаем с парсинга репозитория
+	// Start with parsing the repository
 	repo, err := s.ParseRepository(timeoutCtx, job.Params.OwnerName, job.Params.RepoName)
 	if err != nil {
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to parse repository: %v", err)
 		job.UpdatedAt = time.Now()
 		s.logger.Error("Job %s failed: %v", jobID, err)
+
+		// Update metrics
+		if s.metrics != nil {
+			s.metrics.ParsingJobs.WithLabelValues("in_progress").Dec()
+			s.metrics.ParsingJobs.WithLabelValues("failed").Inc()
+			s.metrics.ParsingJobsErrors.Inc()
+		}
+
 		return
 	}
 
 	job.Progress = 20
 	job.UpdatedAt = time.Now()
 
-	// Если нужно парсить issues
+	// If we need to parse issues
 	if job.Params.ParseIssues {
 		_, err := s.ParseIssues(timeoutCtx, job.Params.OwnerName, job.Params.RepoName)
 		if err != nil {
@@ -222,6 +268,14 @@ func (s *ParserServiceImpl) processParsingJob(ctx context.Context, jobID string)
 			job.ErrorMessage = fmt.Sprintf("failed to parse issues: %v", err)
 			job.UpdatedAt = time.Now()
 			s.logger.Error("Job %s failed at issues parsing: %v", jobID, err)
+
+			// Update metrics
+			if s.metrics != nil {
+				s.metrics.ParsingJobs.WithLabelValues("in_progress").Dec()
+				s.metrics.ParsingJobs.WithLabelValues("failed").Inc()
+				s.metrics.ParsingJobsErrors.Inc()
+			}
+
 			return
 		}
 
@@ -229,7 +283,7 @@ func (s *ParserServiceImpl) processParsingJob(ctx context.Context, jobID string)
 		job.UpdatedAt = time.Now()
 	}
 
-	// Если нужно парсить pull requests
+	// If we need to parse pull requests
 	if job.Params.ParsePRs {
 		_, err := s.ParsePullRequests(timeoutCtx, job.Params.OwnerName, job.Params.RepoName)
 		if err != nil {
@@ -237,6 +291,14 @@ func (s *ParserServiceImpl) processParsingJob(ctx context.Context, jobID string)
 			job.ErrorMessage = fmt.Sprintf("failed to parse pull requests: %v", err)
 			job.UpdatedAt = time.Now()
 			s.logger.Error("Job %s failed at PRs parsing: %v", jobID, err)
+
+			// Update metrics
+			if s.metrics != nil {
+				s.metrics.ParsingJobs.WithLabelValues("in_progress").Dec()
+				s.metrics.ParsingJobs.WithLabelValues("failed").Inc()
+				s.metrics.ParsingJobsErrors.Inc()
+			}
+
 			return
 		}
 
@@ -244,29 +306,48 @@ func (s *ParserServiceImpl) processParsingJob(ctx context.Context, jobID string)
 		job.UpdatedAt = time.Now()
 	}
 
-	// Если нужно парсить пользователей
+	// If we need to parse users
 	if job.Params.ParseUsers {
-		// Здесь мы парсим только владельца репозитория
-		// В реальном приложении можно парсить и других участников
+		// Here we just parse the repository owner
+		// In a real application, you might want to parse other contributors as well
 		_, err := s.ParseUser(timeoutCtx, repo.OwnerLogin)
 		if err != nil {
 			job.Status = "failed"
 			job.ErrorMessage = fmt.Sprintf("failed to parse owner: %v", err)
 			job.UpdatedAt = time.Now()
 			s.logger.Error("Job %s failed at owner parsing: %v", jobID, err)
+
+			// Update metrics
+			if s.metrics != nil {
+				s.metrics.ParsingJobs.WithLabelValues("in_progress").Dec()
+				s.metrics.ParsingJobs.WithLabelValues("failed").Inc()
+				s.metrics.ParsingJobsErrors.Inc()
+			}
+
 			return
 		}
 	}
 
-	// Задача успешно завершена
+	// Job completed successfully
 	job.Status = "completed"
 	job.Progress = 100
 	job.UpdatedAt = time.Now()
+
+	// Update metrics
+	if s.metrics != nil {
+		s.metrics.ParsingJobs.WithLabelValues("in_progress").Dec()
+		s.metrics.ParsingJobs.WithLabelValues("completed").Inc()
+	}
+
 	s.logger.Info("Job %s completed successfully", jobID)
 }
 
 func (s *ParserServiceImpl) ParseRepositoryWithDetails(ctx context.Context, owner, name string, parseIssues, parsePRs bool) (*entity.Repository, error) {
-	// Запускаем транзакцию
+	if s.mongoClient == nil {
+		return nil, fmt.Errorf("mongo client is not initialized")
+	}
+
+	// Start a transaction
 	session, err := s.mongoClient.StartSession()
 	if err != nil {
 		s.logger.Error("Failed to start MongoDB session: %v", err)
@@ -276,8 +357,12 @@ func (s *ParserServiceImpl) ParseRepositoryWithDetails(ctx context.Context, owne
 
 	var repo *entity.Repository
 
-	err = session.WithTransaction(ctx, func(sessCtx mongo.SessionContext) error {
-		// Получаем и сохраняем репозиторий
+	err = mongo.WithSession(ctx, session, func(sessCtx mongo.SessionContext) error {
+		if err := session.StartTransaction(); err != nil {
+			return err
+		}
+
+		// Get and save repository
 		repo, err = s.githubService.GetRepository(sessCtx, owner, name)
 		if err != nil {
 			return err
@@ -287,7 +372,7 @@ func (s *ParserServiceImpl) ParseRepositoryWithDetails(ctx context.Context, owne
 			return err
 		}
 
-		// Если нужно парсить issues
+		// If we need to parse issues
 		if parseIssues {
 			issues, err := s.githubService.GetIssues(sessCtx, owner, name, 1, 100)
 			if err != nil {
@@ -301,24 +386,49 @@ func (s *ParserServiceImpl) ParseRepositoryWithDetails(ctx context.Context, owne
 				}
 			}
 
-			// Обновляем метрики
-			s.metrics.ParsedIssues.Add(float64(len(issues)))
+			// Update metrics
+			if s.metrics != nil {
+				s.metrics.ParsedIssues.Add(float64(len(issues)))
+			}
 		}
 
-		// Аналогично для PRs
+		// Similarly for PRs
 		if parsePRs {
-			// Реализация
+			prs, err := s.githubService.GetPullRequests(sessCtx, owner, name, 1, 100)
+			if err != nil {
+				return err
+			}
+
+			for _, pr := range prs {
+				pr.RepositoryID = repo.ID
+				if err := s.prRepo.Save(sessCtx, pr); err != nil {
+					return err
+				}
+			}
+
+			// Update metrics
+			if s.metrics != nil {
+				s.metrics.ParsedPullRequests.Add(float64(len(prs)))
+			}
+		}
+
+		// Commit the transaction
+		if err := session.CommitTransaction(sessCtx); err != nil {
+			return err
 		}
 
 		return nil
 	})
 
 	if err != nil {
+		s.logger.Error("Transaction failed: %v", err)
 		return nil, err
 	}
 
-	// Обновляем метрики
-	s.metrics.ParsedRepositories.Inc()
+	// Update metrics
+	if s.metrics != nil {
+		s.metrics.ParsedRepositories.Inc()
+	}
 
 	return repo, nil
 }
