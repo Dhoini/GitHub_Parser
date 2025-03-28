@@ -89,7 +89,7 @@ func (l *Logger) log(level LogLevel, format string, v ...interface{}) {
 	}
 
 	// Skip 2 stack frames to get the correct caller
-	file, line := getCallerInfo(2)
+	file, line := getCallerInfo(4)
 
 	// Prepare log message
 	msg := fmt.Sprintf(format, v...)

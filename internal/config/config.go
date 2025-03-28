@@ -31,7 +31,7 @@ func Load() (*Config, error) {
 	cfg.Server.Port = port
 
 	// MongoDB
-	cfg.MongoDB.URI = getEnv("MONGODB_URI", "mongodb://localhost:27017")
+	cfg.MongoDB.URI = getEnv("MONGODB_URI", "mongodb://mongo:27017")
 	cfg.MongoDB.Database = getEnv("MONGODB_DATABASE", "github_parser")
 
 	// GitHub

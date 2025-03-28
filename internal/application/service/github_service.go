@@ -82,12 +82,12 @@ func (s *GithubServiceImpl) GetIssues(ctx context.Context, owner, repo string, p
 			State:        issue.GetState(),
 			AuthorLogin:  issue.GetUser().GetLogin(),
 			RepositoryID: repoID,
-			CreatedAt:    issue.GetCreatedAt().Time,
-			UpdatedAt:    issue.GetUpdatedAt().Time,
+			CreatedAt:    issue.GetCreatedAt(),
+			UpdatedAt:    issue.GetUpdatedAt(),
 		}
 
 		if issue.ClosedAt != nil {
-			closedAt := issue.GetClosedAt().Time
+			closedAt := issue.GetClosedAt()
 			issueEntity.ClosedAt = &closedAt
 		}
 
@@ -132,17 +132,17 @@ func (s *GithubServiceImpl) GetPullRequests(ctx context.Context, owner, repo str
 			State:        pr.GetState(),
 			AuthorLogin:  pr.GetUser().GetLogin(),
 			RepositoryID: repoID,
-			CreatedAt:    pr.GetCreatedAt().Time,
-			UpdatedAt:    pr.GetUpdatedAt().Time,
+			CreatedAt:    pr.GetCreatedAt(),
+			UpdatedAt:    pr.GetUpdatedAt(),
 		}
 
 		if pr.ClosedAt != nil {
-			closedAt := pr.GetClosedAt().Time
+			closedAt := pr.GetClosedAt()
 			prEntity.ClosedAt = &closedAt
 		}
 
 		if pr.MergedAt != nil {
-			mergedAt := pr.GetMergedAt().Time
+			mergedAt := pr.GetMergedAt()
 			prEntity.MergedAt = &mergedAt
 		}
 
