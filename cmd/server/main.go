@@ -11,7 +11,7 @@ import (
 
 	"github.com/Dhoini/GitHub_Parser/internal/application/service"
 	"github.com/Dhoini/GitHub_Parser/internal/config"
-	pb "github.com/Dhoini/GitHub_Parser/internal/infrastructure/api/proto"
+	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/api/proto"
 	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/github"
 	"github.com/Dhoini/GitHub_Parser/internal/infrastructure/persistence/mongodb"
 	grpcHandler "github.com/Dhoini/GitHub_Parser/internal/interfaces/grpc"
@@ -56,7 +56,7 @@ func main() {
 	// Инициализация gRPC сервера
 	server := grpc.NewServer()
 	handler := grpcHandler.NewHandler(parserService, customLogger)
-	pb.RegisterGithubParserServiceServer(server, handler)
+	proto.RegisterGithubParserServiceServer(server, handler)
 
 	// Запуск gRPC сервера
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Server.Port))

@@ -2,15 +2,16 @@ package github
 
 import (
 	"context"
+	"github.com/Dhoini/GitHub_Parser/pkg/utils/RateLimiter"
 	"github.com/Dhoini/GitHub_Parser/pkg/utils/logger"
 	"github.com/google/go-github/v39/github"
 	"golang.org/x/oauth2"
 )
 
-tytype Client struct {
-client    *github.Client
-rateLimit *RateLimit
-logger    *logger.Logger
+type Client struct {
+	client    *github.Client
+	rateLimit *RateLimiter.RateLimit
+	logger    *logger.Logger
 }
 
 func NewGithubClient(token string, logger *logger.Logger) *Client {
@@ -22,7 +23,7 @@ func NewGithubClient(token string, logger *logger.Logger) *Client {
 
 	return &Client{
 		client:    github.NewClient(tc),
-		rateLimit: NewRateLimit(logger),
+		rateLimit: RateLimiter.NewRateLimit(logger),
 		logger:    logger,
 	}
 }
@@ -33,7 +34,7 @@ func (c *Client) GetClient() *github.Client {
 }
 
 // GetRateLimit возвращает контроллер ограничения запросов
-func (c *Client) GetRateLimit() *RateLimit {
+func (c *Client) GetRateLimit() *RateLimiter.RateLimit {
 	return c.rateLimit
 }
 

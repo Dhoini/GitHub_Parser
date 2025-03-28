@@ -11,10 +11,10 @@ type ZapToCustomAdapter struct {
 }
 
 // NewZapToCustomAdapter создает новый адаптер
-func NewZapToCustomAdapter(customLogger *logger.ogger) *zap.Logger {
+func NewZapToCustomAdapter(customLogger *Logger) *zap.Logger {
 	core := zapcore.NewCore(
 		zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
-		zapcore.AddSync(zapcore.WriteSyncer(zapcore.AddSync(customLogger))),
+		zapcore.AddSync(zapcore.WriteSyncer(zapcore.AddSync(&ZapToCustomAdapter{customLogger: customLogger}))),
 		zapcore.DebugLevel,
 	)
 	return zap.New(core)
